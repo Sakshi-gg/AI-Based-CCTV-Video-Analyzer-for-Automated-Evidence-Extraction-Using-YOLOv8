@@ -27,3 +27,5 @@ An automated system leveraging **YOLOv8** for real-time CCTV footage analysis, d
 Ensure you have Python installed, then install the necessary libraries:
 ```bash
 pip install ultralytics PyQt5
+
+
