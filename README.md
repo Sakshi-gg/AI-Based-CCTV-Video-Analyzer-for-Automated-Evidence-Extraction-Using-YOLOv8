@@ -27,5 +27,16 @@ An automated system leveraging **YOLOv8** for real-time CCTV footage analysis, d
 Ensure you have Python installed, then install the necessary libraries:
 ```bash
 pip install ultralytics PyQt5
+```
+
+### 2. Run the application
+```bash
+python main.py
+```
+### 3. Use the GUI
+Upload your video file, click "Start Analysis," and wait for the results to process.
+
+### 4. Save the report 
+Click on save_report, the analysed frames,analysis_report and metadata report will be saved.
 
 
