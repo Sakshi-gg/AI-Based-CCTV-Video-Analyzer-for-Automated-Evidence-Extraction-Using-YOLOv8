@@ -1,0 +1,21 @@
+==================== VIDEO METADATA ====================
+File Path: /home/user/Documents/cctv_forensic_tool/video 1.mp4
+Filename: video 1.mp4
+Resolution (W x H): 320 x 240
+Frame Rate (FPS): 30.00
+Total Frames: 1327
+Duration: 00:00:44
+Codec (FourCC): 34363268
+Video Format (Container): .MP4
+Processing Date: 2025-12-03 14:19:53
+
+==================== ANALYSIS FILTER SETTINGS ====================
+Analysis Rate Achieved: 6.28 FPS
+Target Objects: car
+Conf Threshold: 0.25
+Frame Skip: 5
+Start Time: 00:00:00
+End Time: 00:00:44
+Color Filter: None
+
+============================================================
