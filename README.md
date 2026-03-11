@@ -3,8 +3,7 @@
 An automated system leveraging **YOLOv8** for real-time CCTV footage analysis, designed to detect specific objects and extract video evidence efficiently.
 
 ---
-
-## 🚀 Key Features<img width="1294" height="744" alt="Screenshot from 2026-03-11 17-54-59" src="https://github.com/user-attachments/assets/59bfa642-4d45-4830-b94f-68c5c33f8c3e" />
+## 🚀 Key Features
 
 * **Intelligent Detection:** Utilizes YOLOv8 for high-accuracy object recognition.
 * **Evidence Management:** Automatically extracts and saves relevant video segments.
@@ -36,6 +35,9 @@ python main.py
 ```
 ### 3. Use the GUI
 Upload your video file, click "Start Analysis," and wait for the results to process.
+
+<img width="1294" height="744" alt="Screenshot from 2026-03-11 17-54-59" src="https://github.com/user-attachments/assets/59bfa642-4d45-4830-b94f-68c5c33f8c3e" />
+
 
 ### 4. Save the report 
 Click on save_report, the analysed frames,analysis_report and metadata report will be saved.
