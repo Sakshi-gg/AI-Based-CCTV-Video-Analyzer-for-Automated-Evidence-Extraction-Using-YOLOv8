@@ -4,15 +4,18 @@ import numpy as np
 from ultralytics import YOLO
 from PySide6.QtCore import QThread, Signal
 from utils.color_utils import is_color_match
+# 💾 Import our new M.Tech persistent layer
+from database_manager import ForensicDatabase
 
-# frame_signal now emits frame, detection_count, current_frame_pos, video_fps, frame_counter
 class VideoWorker(QThread):
-    
+    # Signals remain identical so your GUI layer doesn't break
     frame_signal = Signal(np.ndarray, int, float, float, int)  
     finished_signal = Signal(float) 
     
-    # ADDED start_sec, end_sec, color_filter to the constructor
-    def __init__(self, model_path, target_classes, conf_threshold, frame_skip, video_path, video_fps, start_sec, end_sec, color_filter, parent=None):
+    # UPGRADE: Added case_id and db_path to the constructor to link with the UI session
+    def __init__(self, model_path, target_classes, conf_threshold, frame_skip, 
+                 video_path, video_fps, start_sec, end_sec, color_filter, 
+                 case_id=1, db_path="forensic_evidence.db", parent=None):
         super().__init__(parent)
         self.model_path = model_path
         self.target_classes = target_classes
@@ -21,9 +24,13 @@ class VideoWorker(QThread):
         self.video_path = video_path
         self._is_running = True
         self.video_fps = video_fps
-        self.start_sec = start_sec # New: Start time
-        self.end_sec = end_sec     # New: End time
-        self.color_filter = color_filter # New: Color filter
+        self.start_sec = start_sec 
+        self.end_sec = end_sec     
+        self.color_filter = color_filter 
+        
+        # Database and case identifier details
+        self.case_id = case_id
+        self.db = ForensicDatabase(db_path)
         
         self.model = YOLO(self.model_path)
         
@@ -33,7 +40,6 @@ class VideoWorker(QThread):
         cap = cv2.VideoCapture(self.video_path)
         frame_counter = 0 
         
-        # Initial SEEK for Time Filtering
         if self.start_sec > 0:
             start_frame = int(self.start_sec * self.video_fps)
             cap.set(cv2.CAP_PROP_POS_FRAMES, start_frame)
@@ -46,75 +52,103 @@ class VideoWorker(QThread):
             
             frame_counter += 1
             current_frame_pos = cap.get(cv2.CAP_PROP_POS_FRAMES) 
-            
-            # FIX: Calculate the accurate time of the frame *just read*.
-            # current_frame_pos is the index of the *next* frame, so (current_frame_pos - 1) is the index of the current frame.
             time_of_current_frame_sec = (current_frame_pos - 1) / self.video_fps
 
-            # --- TIME FILTERING LOGIC (Check End Time) ---
-            # Use the calculated accurate time for the filter check
             if self.end_sec != float('inf') and time_of_current_frame_sec > self.end_sec:
                 break
             
-            # --- FRAME SKIPPING LOGIC ---
             if self.frame_skip > 1 and frame_counter % self.frame_skip != 0:
                 continue
 
-            # --- Perform Object Detection (YOLO Inference) on the ORIGINAL frame ---
-            results = self.model.predict(
+            # --- M.TECH UPGRADE: Persistent Object Tracking ---
+            results = self.model.track(
                 source=frame,
                 conf=self.conf_threshold,
                 classes=self.target_classes,
+                persist=True,
+                tracker="botsort.yaml",
                 verbose=False
             )
 
-            detections = results[0].boxes.cpu().numpy()
             validated_detections = []
             
-            # --- COLOR FILTERING LOGIC (Check detections) ---
-            if self.color_filter.lower() != 'none':
-                for box_data in detections:
-                    # Get bounding box coordinates
-                    x1, y1, x2, y2 = map(int, box_data.xyxy[0])
-                    
-                    # Ensure coordinates are within frame bounds (CRITICAL for slicing)
-                    h, w, _ = frame.shape
-                    x1, y1 = max(0, x1), max(0, y1)
-                    x2, y2 = min(w, x2), min(h, y2)
-                    
-                    # Crop the bounding box area (Region of Interest - ROI)
-                    roi = frame[y1:y2, x1:x2]
-                    
-                    # Validate the detection based on color match within the ROI
-                    if is_color_match(roi, self.color_filter):
-                        validated_detections.append(box_data)
-            else:
-                # If no color filter, all YOLO detections are validated
-                validated_detections = detections
+            if results[0].boxes is not None:
+                detections = results[0].boxes
+                boxes_xyxy = detections.xyxy.cpu().numpy()
+                confidences = detections.conf.cpu().numpy()
+                classes = detections.cls.cpu().numpy().astype(int)
                 
-            # --- Frame Annotation and Metrics ---
+                if detections.id is not None:
+                    track_ids = detections.id.cpu().numpy().astype(int)
+                else:
+                    track_ids = [None] * len(boxes_xyxy)
+                
+                # --- COLOR FILTERING LOGIC ---
+                if self.color_filter.lower() != 'none':
+                    for idx, box in enumerate(boxes_xyxy):
+                        x1, y1, x2, y2 = map(int, box)
+                        h, w, _ = frame.shape
+                        x1, y1 = max(0, x1), max(0, y1)
+                        x2, y2 = min(w, x2), min(h, y2)
+                        
+                        roi = frame[y1:y2, x1:x2]
+                        
+                        if is_color_match(roi, self.color_filter):
+                            validated_detections.append((box, confidences[idx], classes[idx], track_ids[idx]))
+                else:
+                    for idx, box in enumerate(boxes_xyxy):
+                        validated_detections.append((box, confidences[idx], classes[idx], track_ids[idx]))
+                    
             current_detection_count = len(validated_detections)
-
-            # Start with a copy of the original frame
             annotated_frame = frame.copy() 
-            
-            # Manually draw bounding boxes and labels ONLY for the validated detections
+                
+            # --- Advanced Structural Tracking & Neutral Label Generation ---
             if current_detection_count > 0:
                 names = self.model.names 
-                color = (0, 255, 0) # Green box for clarity
+                color = (0, 0, 255) # Clear Red bounding boxes for forensic logging
 
-                for box_data in validated_detections:
-                    x1, y1, x2, y2 = map(int, box_data.xyxy[0])
-                    conf = box_data.conf[0]
-                    cls = int(box_data.cls[0])
-                    label = f"{names[cls]} {conf:.2f}"
+                for box, conf, cls, t_id in validated_detections:
+                    x1, y1, x2, y2 = map(int, box)
+                    class_name = names[cls]
                     
-                    # Drawing the box and text using OpenCV
+                    # Compute timestamp format string (HH:MM:SS) for the database record
+                    mins, secs = divmod(int(time_of_current_frame_sec), 60)
+                    hours, mins = divmod(mins, 60)
+                    timestamp_str = f"{hours:02d}:{mins:02d}:{secs:02d}"
+
+                    if class_name.lower() == 'person':
+                        if t_id is not None:
+                            identity_label = f"Person_{t_id:03d}"
+                            label = f"{identity_label} ({conf:.2f})"
+                        else:
+                            identity_label = "Person_Initializing"
+                            label = f"{identity_label} ({conf:.2f})"
+                    else:
+                        if t_id is not None:
+                            identity_label = f"{class_name.capitalize()}_{t_id:03d}"
+                            label = f"{identity_label} ({conf:.2f})"
+                        else:
+                            identity_label = class_name.capitalize()
+                            label = f"{identity_label} ({conf:.2f})"
+                    
+                    # 💾 M.TECH ENHANCEMENT 5: Write tracking footprint point directly into SQLite
+                    self.db.log_entity_frame(
+                        case_id=self.case_id,
+                        entity_label=identity_label,
+                        class_type=class_name,
+                        confidence=float(conf),
+                        frame_num=int(frame_counter),
+                        video_time=timestamp_str
+                    )
+                    
+                    # Draw updated identity overlays using OpenCV
                     cv2.rectangle(annotated_frame, (x1, y1), (x2, y2), color, 2)
                     cv2.putText(annotated_frame, label, (x1, y1 - 10), 
                                 cv2.FONT_HERSHEY_SIMPLEX, 0.5, color, 2)
+            else:
+                current_detection_count = 0
 
-            # Emit the frame, detection count, and frame position
+            # Emit clean results back to your original PySide6 GUI functions
             self.frame_signal.emit(
                 annotated_frame, 
                 current_detection_count, 
@@ -132,4 +166,3 @@ class VideoWorker(QThread):
     def stop(self):
         self._is_running = False
         self.wait()
-
