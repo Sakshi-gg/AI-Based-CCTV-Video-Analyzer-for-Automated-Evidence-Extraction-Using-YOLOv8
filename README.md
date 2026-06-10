@@ -1,8 +1,9 @@
 # AI-Based CCTV Video Analyzer for Automated Evidence Extraction
 
 An automated system leveraging **YOLOv8** for real-time CCTV footage analysis, designed to detect specific objects and extract video evidence efficiently.
-
+### 🎥 [Watch Live System Execution Demo](https://github.com/user-attachments/assets/9e5651ee-1190-47a1-8586-9489ff5f2e46)
 ---
+
 ## 🚀 Key Features
 
 * **Intelligent Detection:** Utilizes YOLOv8 for high-accuracy object recognition.
