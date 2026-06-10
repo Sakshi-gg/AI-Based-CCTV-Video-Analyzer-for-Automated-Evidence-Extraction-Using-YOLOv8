@@ -4,15 +4,12 @@ import numpy as np
 from ultralytics import YOLO
 from PySide6.QtCore import QThread, Signal
 from utils.color_utils import is_color_match
-# 💾 Import our new M.Tech persistent layer
 from database_manager import ForensicDatabase
 
 class VideoWorker(QThread):
-    # Signals remain identical so your GUI layer doesn't break
     frame_signal = Signal(np.ndarray, int, float, float, int)  
     finished_signal = Signal(float) 
     
-    # UPGRADE: Added case_id and db_path to the constructor to link with the UI session
     def __init__(self, model_path, target_classes, conf_threshold, frame_skip, 
                  video_path, video_fps, start_sec, end_sec, color_filter, 
                  case_id=1, db_path="forensic_evidence.db", parent=None):
@@ -28,15 +25,12 @@ class VideoWorker(QThread):
         self.end_sec = end_sec     
         self.color_filter = color_filter 
         
-        # Database and case identifier details
         self.case_id = case_id
         self.db = ForensicDatabase(db_path)
-        
         self.model = YOLO(self.model_path)
         
     def run(self):
         start_time_real = time.time()
-        
         cap = cv2.VideoCapture(self.video_path)
         frame_counter = 0 
         
@@ -60,7 +54,6 @@ class VideoWorker(QThread):
             if self.frame_skip > 1 and frame_counter % self.frame_skip != 0:
                 continue
 
-            # --- M.TECH UPGRADE: Persistent Object Tracking ---
             results = self.model.track(
                 source=frame,
                 conf=self.conf_threshold,
@@ -83,16 +76,13 @@ class VideoWorker(QThread):
                 else:
                     track_ids = [None] * len(boxes_xyxy)
                 
-                # --- COLOR FILTERING LOGIC ---
                 if self.color_filter.lower() != 'none':
                     for idx, box in enumerate(boxes_xyxy):
                         x1, y1, x2, y2 = map(int, box)
                         h, w, _ = frame.shape
                         x1, y1 = max(0, x1), max(0, y1)
                         x2, y2 = min(w, x2), min(h, y2)
-                        
                         roi = frame[y1:y2, x1:x2]
-                        
                         if is_color_match(roi, self.color_filter):
                             validated_detections.append((box, confidences[idx], classes[idx], track_ids[idx]))
                 else:
@@ -102,53 +92,57 @@ class VideoWorker(QThread):
             current_detection_count = len(validated_detections)
             annotated_frame = frame.copy() 
                 
-            # --- Advanced Structural Tracking & Neutral Label Generation ---
             if current_detection_count > 0:
                 names = self.model.names 
-                color = (0, 0, 255) # Clear Red bounding boxes for forensic logging
+                color = (0, 0, 255) 
 
                 for box, conf, cls, t_id in validated_detections:
                     x1, y1, x2, y2 = map(int, box)
                     class_name = names[cls]
                     
-                    # Compute timestamp format string (HH:MM:SS) for the database record
                     mins, secs = divmod(int(time_of_current_frame_sec), 60)
                     hours, mins = divmod(mins, 60)
                     timestamp_str = f"{hours:02d}:{mins:02d}:{secs:02d}"
 
+                    # 🚗 ALPR METRIC: Static roadmap placement for CPU execution
+                    detected_plate_text = "N/A"
+                    if class_name.lower() in ['car', 'truck', 'bus', 'motorcycle']:
+                        detected_plate_text = "Future Work"
+                    
                     if class_name.lower() == 'person':
                         if t_id is not None:
                             identity_label = f"Person_{t_id:03d}"
-                            label = f"{identity_label} ({conf:.2f})"
                         else:
                             identity_label = "Person_Initializing"
-                            label = f"{identity_label} ({conf:.2f})"
+                        label = f"{identity_label} ({conf:.2f})"
                     else:
                         if t_id is not None:
                             identity_label = f"{class_name.capitalize()}_{t_id:03d}"
-                            label = f"{identity_label} ({conf:.2f})"
                         else:
                             identity_label = class_name.capitalize()
+                        
+                        if detected_plate_text != "N/A":
+                            label = f"{identity_label} | Plate: {detected_plate_text} ({conf:.2f})"
+                        else:
                             label = f"{identity_label} ({conf:.2f})"
                     
-                    # 💾 M.TECH ENHANCEMENT 5: Write tracking footprint point directly into SQLite
+                    # Log tracking data package directly to the database layer
                     self.db.log_entity_frame(
                         case_id=self.case_id,
                         entity_label=identity_label,
                         class_type=class_name,
                         confidence=float(conf),
                         frame_num=int(frame_counter),
-                        video_time=timestamp_str
+                        video_time=timestamp_str,
+                        license_plate=detected_plate_text 
                     )
                     
-                    # Draw updated identity overlays using OpenCV
                     cv2.rectangle(annotated_frame, (x1, y1), (x2, y2), color, 2)
                     cv2.putText(annotated_frame, label, (x1, y1 - 10), 
                                 cv2.FONT_HERSHEY_SIMPLEX, 0.5, color, 2)
             else:
                 current_detection_count = 0
 
-            # Emit clean results back to your original PySide6 GUI functions
             self.frame_signal.emit(
                 annotated_frame, 
                 current_detection_count, 
