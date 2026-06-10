@@ -1,0 +1,24 @@
+==================== VIDEO METADATA ====================
+File Path: /home/user/Documents/cctv_forensic_tool/Video 2.mp4
+Filename: Video 2.mp4
+Resolution (W x H): 320 x 240
+Frame Rate (FPS): 30.00
+Total Frames: 1787
+Duration: 00:00:59
+Codec (FourCC): 34363268
+Video Format (Container): .MP4
+Processing Date: 2026-06-10 09:26:15
+
+==================== ANALYSIS FILTER SETTINGS ====================
+Analysis Rate Achieved: 7.07 FPS
+Target Objects: person
+Conf Threshold: 0.25
+Frame Skip: 5
+Start Time: 00:00:00
+End Time: 00:00:59
+Color Filter: None
+
+==================== GENERATED FORENSIC INCIDENT SUMMARY (AI) ====================
+An automated object tracking analysis of video file "Video 2.mp4", conducted on 2026-06-10 03:48:02, identified a total of seven distinct person-type entities within the evaluated frames. The entity designated as Person_Initializing was first detected at timestamp 00:00:07 and remained observable until 00:00:49, encompassing a total of 154 evaluated frames. Person_001 was tracked entering the scene at 00:00:13 and exiting at 00:00:41, covering 68 evaluated frames. Two brief presences were recorded for Person_002, observed from 00:00:24 to 00:00:24 across 8 frames, and for Person_003, tracked from 00:00:26 to 00:00:26 over 10 frames. Subsequently, Person_004 was observed entering at 00:00:41 and exiting at 00:00:43, spanning 11 frames. Person_005 was tracked from 00:00:44 to 00:00:48, across 18 frames. The final entity identified, Person_006, appeared at 00:00:49 and exited at 00:00:50, with a track footprint of 8 evaluated frames.
+
+============================================================
