@@ -515,7 +515,8 @@ class AnalyzerWindow(QMainWindow):
             video_fps=self.video_fps,
             start_sec=start_sec,
             end_sec=end_sec,
-            color_filter=color_filter
+            color_filter=color_filter,
+            case_id=self.current_case_id
         )
         self.video_worker.frame_signal.connect(self.update_frame) 
         self.video_worker.finished_signal.connect(self.analysis_finished) 
@@ -739,6 +740,7 @@ class AnalyzerWindow(QMainWindow):
         super().resizeEvent(event)
 
     def closeEvent(self, event):
-        if self.video_worker and self.video_worker.isRunning():
-            self.video_worker.stop()
-        super().closeEvent(event)
+      if self.video_worker and self.video_worker.isRunning():
+        self.video_worker.stop()
+        self.video_worker = None
+      event.accept()

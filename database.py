@@ -35,17 +35,18 @@ def initialize_db():
         )
     """)
 
+
     cursor.execute("""
-        CREATE TABLE IF NOT EXISTS evidence_frames (
-            id               INTEGER PRIMARY KEY AUTOINCREMENT,
-            case_id          INTEGER NOT NULL,
-            video_filename   TEXT,
-            frame_num        INTEGER,
-            timestamp        TEXT,
-            detection_count  INTEGER,
-            image_path       TEXT,
-            filters_used     TEXT,
-            created_at       TEXT NOT NULL,
+        CREATE TABLE IF NOT EXISTS entity_tracks (
+            id            INTEGER PRIMARY KEY AUTOINCREMENT,
+            case_id       INTEGER NOT NULL,
+            entity_label  TEXT,
+            class_type    TEXT,
+            confidence    REAL,
+            frame_num     INTEGER,
+            video_time    TEXT,
+            license_plate TEXT,
+            created_at    TEXT NOT NULL,
             FOREIGN KEY (case_id) REFERENCES cases(case_id)
         )
     """)
@@ -130,3 +131,29 @@ def delete_case(case_id):
     cursor.execute("DELETE FROM cases WHERE case_id=?", (case_id,))
     conn.commit()
     conn.close()
+
+def log_entity_frame(case_id, entity_label, class_type,
+                     confidence, frame_num, video_time, license_plate="N/A"):
+    """
+    Logs every individual detection with its track ID.
+    Called from VideoWorker for every bounding box on every processed frame.
+    """
+    conn = get_connection()
+    cursor = conn.cursor()
+    cursor.execute("""
+        INSERT INTO entity_tracks
+            (case_id, entity_label, class_type, confidence,
+             frame_num, video_time, license_plate, created_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+    """, (
+        case_id,
+        entity_label,
+        class_type,
+        confidence,
+        frame_num,
+        video_time,
+        license_plate,
+        time.strftime('%Y-%m-%d %H:%M:%S')
+    ))
+    conn.commit()
+    conn.close()    
