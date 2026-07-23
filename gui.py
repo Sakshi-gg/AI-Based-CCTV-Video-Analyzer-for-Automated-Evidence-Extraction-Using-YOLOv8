@@ -5,11 +5,12 @@ import csv
 import cv2
 import numpy as np
 from ultralytics import YOLO
+from ai_reporter import AIReporterThread
 
 from PySide6.QtWidgets import (
     QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, 
     QLabel, QPushButton, QSlider, QComboBox, QLineEdit, QScrollArea, 
-    QCheckBox, QGridLayout, QGroupBox, QSpinBox, QProgressBar, QMessageBox, QFileDialog
+    QCheckBox, QGridLayout, QGroupBox, QSpinBox, QProgressBar, QMessageBox, QFileDialog, QDialog, QTextEdit
 )
 from PySide6.QtCore import Qt, QThread, Signal, Slot
 from PySide6.QtGui import QImage, QPixmap, QFont
@@ -74,6 +75,7 @@ class AnalyzerWindow(QMainWindow):
 
         # PHASE 2: database case tracker
         self.current_case_id = None
+        self.ai_reporter     = None 
         initialize_db()
         
         self.setup_ui()
@@ -229,6 +231,12 @@ class AnalyzerWindow(QMainWindow):
         self.generate_report_btn.clicked.connect(self.generate_report)
         self.generate_report_btn.setEnabled(False) 
         output_layout.addWidget(self.generate_report_btn)
+
+        self.ai_summary_btn = QPushButton("🤖 Generate AI Summary")
+        self.ai_summary_btn.setStyleSheet("QPushButton { background-color: #00838F; color: white; border: none; }")
+        self.ai_summary_btn.clicked.connect(self.generate_ai_summary)
+        self.ai_summary_btn.setEnabled(False)
+        output_layout.addWidget(self.ai_summary_btn)
         sidebar_layout.addWidget(output_group)
 
         # --- Target Objects ---
@@ -705,6 +713,7 @@ class AnalyzerWindow(QMainWindow):
 
         if self.total_evidence_frames > 0:
             self.generate_report_btn.setEnabled(True)
+            self.ai_summary_btn.setEnabled(True) 
 
         self.analyze_btn.setText("▶️ START")
         self.analyze_btn.setStyleSheet(f"QPushButton {{ background-color: {self.COLOR_START_ANALYSIS}; color: {self.COLOR_TEXT_WHITE}; border: none; }}")
@@ -730,6 +739,68 @@ class AnalyzerWindow(QMainWindow):
             last_analysis_rate=self.last_analysis_rate
         )
 
+    @Slot()
+    def generate_ai_summary(self):
+        """Generates AI investigation summary using OpenRouter API."""
+        if not self.current_case_id:
+            QMessageBox.warning(self, "No Case", "Run an analysis first.")
+            return
+
+        self.ai_summary_btn.setEnabled(False)
+        self.ai_summary_btn.setText("⏳ Generating...")
+
+        self.ai_reporter = AIReporterThread(
+            case_id=self.current_case_id,
+            video_metadata=self.video_metadata
+        )
+        self.ai_reporter.summary_ready.connect(self.show_ai_summary)
+        self.ai_reporter.error_occurred.connect(self.show_ai_error)
+        self.ai_reporter.start()
+
+    @Slot(str)
+    def show_ai_summary(self, summary_text):
+        """Displays the AI summary in a popup dialog."""
+        self.ai_summary_btn.setEnabled(True)
+        self.ai_summary_btn.setText("🤖 Generate AI Summary")
+        
+        if self.ai_reporter and self.ai_reporter.isRunning():
+           self.ai_reporter.wait()
+    
+        dialog = QDialog(self)
+        dialog.setWindowTitle("🤖 AI Investigation Summary")
+        dialog.setMinimumSize(700, 500)
+        dialog.setStyleSheet("background-color: #1E1E1E; color: #F0F2F6;")
+
+        text_edit = QTextEdit()
+        text_edit.setPlainText(summary_text)
+        text_edit.setReadOnly(True)
+        text_edit.setStyleSheet("""
+            QTextEdit {
+                background-color: #2C2C2C;
+                color: #F0F2F6;
+                font-size: 13px;
+                padding: 15px;
+                border: 1px solid #FFFFFF;
+                border-radius: 5px;
+            }
+        """)
+
+        close_btn = QPushButton("Close")
+        close_btn.setStyleSheet("background-color: #673AB7; color: white; padding: 8px; border: none;")
+        close_btn.clicked.connect(dialog.accept)
+
+        main_layout = QVBoxLayout(dialog)
+        main_layout.addWidget(text_edit)
+        main_layout.addWidget(close_btn)
+        dialog.exec()
+
+    @Slot(str)
+    def show_ai_error(self, error_text):
+        """Shows error if AI summary fails."""
+        self.ai_summary_btn.setEnabled(True)
+        self.ai_summary_btn.setText("🤖 Generate AI Summary")
+        QMessageBox.critical(self, "AI Summary Error", error_text)
+
     def resizeEvent(self, event):
         if self.video_label.pixmap():
             self.video_label.setPixmap(self.video_label.pixmap().scaled(
@@ -743,4 +814,7 @@ class AnalyzerWindow(QMainWindow):
       if self.video_worker and self.video_worker.isRunning():
         self.video_worker.stop()
         self.video_worker = None
+      if hasattr(self, 'ai_reporter') and self.ai_reporter.isRunning():
+        self.ai_reporter.wait(3000)
+        self.ai_reporter = None
       event.accept()
