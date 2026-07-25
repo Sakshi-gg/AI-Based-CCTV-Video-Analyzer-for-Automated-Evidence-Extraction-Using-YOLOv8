@@ -5,10 +5,10 @@ from ultralytics import YOLO
 from PySide6.QtCore import QThread, Signal
 from utils.color_utils import is_color_match
 from database import log_entity_frame
-
+from anomaly_detector import AnomalyDetector
 
 class VideoWorker(QThread):
-    frame_signal    = Signal(np.ndarray, int, float, float, int)
+    frame_signal = Signal(np.ndarray, int, float, float, int, float, bool)
     finished_signal = Signal(float)
 
     def __init__(self, model_path, target_classes, conf_threshold, frame_skip,
@@ -27,10 +27,12 @@ class VideoWorker(QThread):
         self.color_filter    = color_filter
         self.case_id         = case_id
         self.model           = YOLO(self.model_path)
+        self.anomaly_detector = AnomalyDetector()
 
     def run(self):
         start_time_real = time.time()
         cap             = cv2.VideoCapture(self.video_path)
+        self.anomaly_detector.reset()
         frame_counter   = 0
 
         if self.start_sec > 0:
@@ -59,9 +61,10 @@ class VideoWorker(QThread):
                 classes=self.target_classes,
                 persist=True,
                 tracker="botsort.yaml",
-                verbose=False
-            )
+                verbose=False,
 
+            )
+            anomaly_score, is_anomalous = self.anomaly_detector.update(frame)
             validated_detections = []
 
             if results[0].boxes is not None:
@@ -147,7 +150,9 @@ class VideoWorker(QThread):
                 current_detection_count,
                 current_frame_pos,
                 self.video_fps,
-                frame_counter
+                frame_counter,
+                anomaly_score,
+                is_anomalous 
             )
 
         cap.release()
