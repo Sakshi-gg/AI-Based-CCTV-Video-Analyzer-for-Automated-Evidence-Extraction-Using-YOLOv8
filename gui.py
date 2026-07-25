@@ -11,7 +11,8 @@ from PySide6.QtWidgets import (
     QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, 
     QLabel, QPushButton, QSlider, QComboBox, QLineEdit, QScrollArea, 
     QCheckBox, QGridLayout, QGroupBox, QSpinBox, QProgressBar,
-    QMessageBox, QFileDialog, QDialog, QTextEdit
+    QMessageBox, QFileDialog, QDialog, QTextEdit, QTabWidget,
+    QTableWidget, QTableWidgetItem, QHeaderView
 )
 from PySide6.QtCore import Qt, QThread, Signal, Slot
 from PySide6.QtGui import QImage, QPixmap, QFont
@@ -139,11 +140,59 @@ class AnalyzerWindow(QMainWindow):
         self.sidebar_scroll_area.setWidget(self.control_panel)
         main_layout.addWidget(self.sidebar_scroll_area, self.SIDEBAR_STRETCH)
 
+        # TABS: wrap right side in QTabWidget
+        self.tab_widget = QTabWidget()
+        self.tab_widget.setStyleSheet("""
+            QTabWidget::pane {
+                border: none;
+                background-color: #0A0A0A;
+            }
+            QTabBar::tab {
+                background-color: #2C2C2C;
+                color: #F0F2F6;
+                padding: 8px 20px;
+                border: none;
+                font-weight: bold;
+                font-size: 12px;
+            }
+            QTabBar::tab:selected {
+                background-color: #0A0A0A;
+                color: #FFFFFF;
+                border-top: 2px solid #007BFF;
+            }
+            QTabBar::tab:hover {
+                background-color: #3C3C3C;
+            }
+        """)
+        main_layout.addWidget(self.tab_widget, self.MAIN_CONTENT_STRETCH)
+
+        # Tab 1: Live Analysis
         self.content_area   = QWidget()
         self.content_layout = QVBoxLayout(self.content_area)
-        self.content_area.setStyleSheet("background-color: #0A0A0A;") 
-        main_layout.addWidget(self.content_area, self.MAIN_CONTENT_STRETCH)
+        self.content_area.setStyleSheet("background-color: #0A0A0A;")
+        self.tab_widget.addTab(self.content_area, "📹  Live Analysis")
         self.setup_content_area()
+
+        # Tab 2: Suspect Timeline
+        self.timeline_area = QWidget()
+        self.timeline_layout = QVBoxLayout(self.timeline_area)
+        self.timeline_area.setStyleSheet("background-color: #0A0A0A;")
+        self.tab_widget.addTab(self.timeline_area, "🕵  Suspect Timeline")
+        self.setup_timeline_tab()
+
+        # Tab 3: Case History
+        self.history_area = QWidget()
+        self.history_layout = QVBoxLayout(self.history_area)
+        self.history_area.setStyleSheet("background-color: #0A0A0A;")
+        self.tab_widget.addTab(self.history_area, "🗂  Case History")
+        self.setup_history_tab()
+
+        # Tab 4: AI Report
+        self.report_area = QWidget()
+        self.report_layout = QVBoxLayout(self.report_area)
+        self.report_area.setStyleSheet("background-color: #0A0A0A;")
+        self.tab_widget.addTab(self.report_area, "🤖  AI Report")
+        self.setup_ai_report_tab()
 
     def setup_sidebar(self):
         sidebar_layout = QVBoxLayout(self.control_panel)
@@ -262,7 +311,6 @@ class AnalyzerWindow(QMainWindow):
         # --- Metrics Bar ---
         metrics_layout = QHBoxLayout()
 
-        # BUG FIX: create_metric_label must be indented as inner function
         def create_metric_label(text):
             label = QLabel(text)
             label.setMaximumWidth(200)
@@ -339,6 +387,151 @@ class AnalyzerWindow(QMainWindow):
         
         self.no_evidence_label = QLabel("No target objects have been detected yet...")
         self.gallery_layout.addWidget(self.no_evidence_label, 0, 0)
+
+    def setup_timeline_tab(self):
+        """Tab 2: Suspect Timeline — per-ID movement table."""
+        title = QLabel("🕵️ Suspect & Vehicle Timeline")
+        title.setFont(QFont("Sans Serif", 14, QFont.Weight.Bold))
+        title.setStyleSheet("color: #FFFFFF; padding: 10px;")
+        self.timeline_layout.addWidget(title)
+
+        refresh_btn = QPushButton("🔄 Refresh Timeline")
+        refresh_btn.setStyleSheet("QPushButton { background-color: #007BFF; color: white; border: none; padding: 8px; }")
+        refresh_btn.clicked.connect(self.refresh_timeline)
+        self.timeline_layout.addWidget(refresh_btn)
+
+        self.timeline_table = QTableWidget()
+        self.timeline_table.setColumnCount(5)
+        self.timeline_table.setHorizontalHeaderLabels([
+            "Entity ID", "Type", "First Seen", "Last Seen", "Appearances"
+        ])
+        self.timeline_table.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Stretch)
+        self.timeline_table.setStyleSheet("""
+            QTableWidget {
+                background-color: #1E1E1E;
+                color: #F0F2F6;
+                gridline-color: #3C3C3C;
+                border: 1px solid #FFFFFF;
+            }
+            QHeaderView::section {
+                background-color: #2C2C2C;
+                color: #FFFFFF;
+                font-weight: bold;
+                padding: 6px;
+                border: none;
+            }
+            QTableWidget::item:selected {
+                background-color: #007BFF;
+            }
+        """)
+        self.timeline_layout.addWidget(self.timeline_table)
+
+    def setup_history_tab(self):
+        """Tab 3: Case History — all past cases from SQLite."""
+        title = QLabel("🗂️ Investigation Case History")
+        title.setFont(QFont("Sans Serif", 14, QFont.Weight.Bold))
+        title.setStyleSheet("color: #FFFFFF; padding: 10px;")
+        self.history_layout.addWidget(title)
+
+        refresh_btn = QPushButton("🔄 Refresh Cases")
+        refresh_btn.setStyleSheet("QPushButton { background-color: #007BFF; color: white; border: none; padding: 8px; }")
+        refresh_btn.clicked.connect(self.refresh_case_history)
+        self.history_layout.addWidget(refresh_btn)
+
+        self.history_table = QTableWidget()
+        self.history_table.setColumnCount(4)
+        self.history_table.setHorizontalHeaderLabels([
+            "Case ID", "Case Name", "Created At", "Evidence Frames"
+        ])
+        self.history_table.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Stretch)
+        self.history_table.setStyleSheet("""
+            QTableWidget {
+                background-color: #1E1E1E;
+                color: #F0F2F6;
+                gridline-color: #3C3C3C;
+                border: 1px solid #FFFFFF;
+            }
+            QHeaderView::section {
+                background-color: #2C2C2C;
+                color: #FFFFFF;
+                font-weight: bold;
+                padding: 6px;
+                border: none;
+            }
+            QTableWidget::item:selected {
+                background-color: #007BFF;
+            }
+        """)
+        self.history_layout.addWidget(self.history_table)
+
+    def setup_ai_report_tab(self):
+        """Tab 4: AI Report — dedicated tab instead of popup."""
+        title = QLabel("🤖 AI Investigation Summary")
+        title.setFont(QFont("Sans Serif", 14, QFont.Weight.Bold))
+        title.setStyleSheet("color: #FFFFFF; padding: 10px;")
+        self.report_layout.addWidget(title)
+
+        generate_btn = QPushButton("✨ Generate AI Summary for Current Case")
+        generate_btn.setStyleSheet("QPushButton { background-color: #00838F; color: white; border: none; padding: 10px; font-size: 13px; }")
+        generate_btn.clicked.connect(self.generate_ai_summary)
+        self.report_layout.addWidget(generate_btn)
+
+        self.ai_report_text = QTextEdit()
+        self.ai_report_text.setReadOnly(True)
+        self.ai_report_text.setPlaceholderText("Run an analysis then click 'Generate AI Summary' to produce the investigation report...")
+        self.ai_report_text.setStyleSheet("""
+            QTextEdit {
+                background-color: #1E1E1E;
+                color: #F0F2F6;
+                font-size: 13px;
+                padding: 15px;
+                border: 1px solid #FFFFFF;
+                border-radius: 5px;
+            }
+        """)
+        self.report_layout.addWidget(self.ai_report_text)
+
+    def refresh_timeline(self):
+        """Loads entity tracking data into the timeline table."""
+        if not self.current_case_id:
+            self.timeline_table.setRowCount(0)
+            return
+        from database import get_connection
+        conn = get_connection()
+        rows = conn.execute("""
+            SELECT entity_label, class_type,
+                   MIN(video_time) as first_seen,
+                   MAX(video_time) as last_seen,
+                   COUNT(*) as appearances
+            FROM entity_tracks
+            WHERE case_id=?
+            GROUP BY entity_label
+            ORDER BY appearances DESC
+        """, (self.current_case_id,)).fetchall()
+        conn.close()
+
+        self.timeline_table.setRowCount(len(rows))
+        for i, row in enumerate(rows):
+            for j, val in enumerate(row):
+                item = QTableWidgetItem(str(val))
+                item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
+                self.timeline_table.setItem(i, j, item)
+
+    def refresh_case_history(self):
+        """Loads all past cases into the history table."""
+        from database import get_connection
+        conn = get_connection()
+        cases = conn.execute("SELECT case_id, name, created_at FROM cases ORDER BY created_at DESC").fetchall()
+        conn.close()
+
+        self.history_table.setRowCount(len(cases))
+        for i, case in enumerate(cases):
+            from database import get_frames_for_case
+            frame_count = len(get_frames_for_case(case[0]))
+            for j, val in enumerate([case[0], case[1], case[2], frame_count]):
+                item = QTableWidgetItem(str(val))
+                item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
+                self.history_table.setItem(i, j, item)
 
     def extract_and_display_metadata(self, video_path):
         cap = cv2.VideoCapture(video_path)
@@ -668,6 +861,10 @@ class AnalyzerWindow(QMainWindow):
             self.ai_summary_btn.setEnabled(True)
         self.analyze_btn.setText("▶️ START")
         self.analyze_btn.setStyleSheet(f"QPushButton {{ background-color: {self.COLOR_START_ANALYSIS}; color: white; border: none; }}")
+        
+        # Auto-refresh timeline and case history upon completion
+        self.refresh_timeline()
+        self.refresh_case_history()
 
     @Slot()
     def generate_report(self):
@@ -700,34 +897,14 @@ class AnalyzerWindow(QMainWindow):
 
     @Slot(str)
     def show_ai_summary(self, summary_text):
+        """Write AI summary to Tab 4 and switch to it."""
         self.ai_summary_btn.setEnabled(True)
         self.ai_summary_btn.setText("🤖 Generate AI Summary")
         if self.ai_reporter and self.ai_reporter.isRunning():
             self.ai_reporter.wait()
-
-        dialog = QDialog(self)
-        dialog.setWindowTitle("🤖 AI Investigation Summary")
-        dialog.setMinimumSize(700, 500)
-        dialog.setStyleSheet("background-color: #1E1E1E; color: #F0F2F6;")
-
-        text_edit = QTextEdit()
-        text_edit.setPlainText(summary_text)
-        text_edit.setReadOnly(True)
-        text_edit.setStyleSheet("""
-            QTextEdit {
-                background-color: #2C2C2C; color: #F0F2F6;
-                font-size: 13px; padding: 15px;
-                border: 1px solid #FFFFFF; border-radius: 5px;
-            }
-        """)
-        close_btn = QPushButton("Close")
-        close_btn.setStyleSheet("background-color: #673AB7; color: white; padding: 8px; border: none;")
-        close_btn.clicked.connect(dialog.accept)
-
-        main_layout = QVBoxLayout(dialog)
-        main_layout.addWidget(text_edit)
-        main_layout.addWidget(close_btn)
-        dialog.exec()
+        # Write to Tab 4 and switch to it
+        self.ai_report_text.setPlainText(summary_text)
+        self.tab_widget.setCurrentIndex(3)
 
     @Slot(str)
     def show_ai_error(self, error_text):
@@ -736,7 +913,6 @@ class AnalyzerWindow(QMainWindow):
         QMessageBox.critical(self, "AI Summary Error", error_text)
 
     def resizeEvent(self, event):
-        # BUG FIX: guard against resizeEvent firing before video_label is created
         if hasattr(self, 'video_label') and self.video_label.pixmap():
             self.video_label.setPixmap(self.video_label.pixmap().scaled(
                 self.video_label.size(),
