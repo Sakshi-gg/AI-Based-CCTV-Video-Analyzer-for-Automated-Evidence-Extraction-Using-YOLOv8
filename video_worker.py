@@ -10,6 +10,7 @@ from anomaly_detector import AnomalyDetector
 class VideoWorker(QThread):
     frame_signal = Signal(np.ndarray, int, float, float, int, float, bool)
     finished_signal = Signal(float)
+    heatmap_signal  = Signal(np.ndarray) 
 
     def __init__(self, model_path, target_classes, conf_threshold, frame_skip,
                  video_path, video_fps, start_sec, end_sec, color_filter,
@@ -33,6 +34,10 @@ class VideoWorker(QThread):
         start_time_real = time.time()
         cap             = cv2.VideoCapture(self.video_path)
         self.anomaly_detector.reset()
+        
+        # Heatmap accumulator — initialized on first frame
+        heatmap_acc   = None
+        last_frame_bgr = None  # keep a copy of last frame for overlay
         frame_counter   = 0
 
         if self.start_sec > 0:
@@ -45,6 +50,12 @@ class VideoWorker(QThread):
             if not success:
                 break
 
+            # Initialize heatmap accumulator based on video frame shape
+            if heatmap_acc is None:
+                h, w, _ = frame.shape
+                heatmap_acc = np.zeros((h, w), dtype=np.float32)
+
+            last_frame_bgr = frame.copy()
             frame_counter     += 1
             current_frame_pos  = cap.get(cv2.CAP_PROP_POS_FRAMES)
             time_of_current_frame_sec = (current_frame_pos - 1) / self.video_fps
@@ -62,7 +73,6 @@ class VideoWorker(QThread):
                 persist=True,
                 tracker="botsort.yaml",
                 verbose=False,
-
             )
             anomaly_score, is_anomalous = self.anomaly_detector.update(frame)
             validated_detections = []
@@ -106,6 +116,12 @@ class VideoWorker(QThread):
                     x1, y1, x2, y2 = map(int, box)
                     class_name      = names[cls]
 
+                    # Accumulate detection region into heatmap matrix
+                    h_img, w_img, _ = frame.shape
+                    rx1, ry1 = max(0, x1), max(0, y1)
+                    rx2, ry2 = min(w_img, x2), min(h_img, y2)
+                    heatmap_acc[ry1:ry2, rx1:rx2] += 1.0
+
                     mins, secs  = divmod(int(time_of_current_frame_sec), 60)
                     hours, mins = divmod(mins, 60)
                     timestamp_str = f"{hours:02d}:{mins:02d}:{secs:02d}"
@@ -114,7 +130,7 @@ class VideoWorker(QThread):
                     if class_name.lower() in ['car', 'truck', 'bus', 'motorcycle']:
                         detected_plate_text = "Future Work"
 
-                    # FIX: Skip uninitialized tracks entirely — no logging, no label
+                    # Skip uninitialized tracks entirely — no logging, no label
                     if t_id is None:
                         continue
 
@@ -156,11 +172,19 @@ class VideoWorker(QThread):
             )
 
         cap.release()
+
+        # Generate and emit the final combined heatmap overlay
+        if heatmap_acc is not None and last_frame_bgr is not None and np.max(heatmap_acc) > 0:
+            heatmap_norm = cv2.normalize(heatmap_acc, None, 0, 255, cv2.NORM_MINMAX, dtype=cv2.CV_8U)
+            heatmap_color = cv2.applyColorMap(heatmap_norm, cv2.COLORMAP_JET)
+            final_overlay = cv2.addWeighted(last_frame_bgr, 0.6, heatmap_color, 0.4, 0)
+            self.heatmap_signal.emit(final_overlay)
+
         end_time_real = time.time()
         self.finished_signal.emit(end_time_real - start_time_real)
 
     def stop(self):
-      self._is_running = False
-      if not self.wait(3000):  # wait max 3 seconds
-        self.terminate()     
-        self.wait()
+        self._is_running = False
+        if not self.wait(3000):  # wait max 3 seconds
+            self.terminate()     
+            self.wait()

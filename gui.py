@@ -6,6 +6,7 @@ import cv2
 import numpy as np
 from ultralytics import YOLO
 from ai_reporter import AIReporterThread
+from pdf_exporter import generate_pdf_report
 
 from PySide6.QtWidgets import (
     QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, 
@@ -240,6 +241,12 @@ class AnalyzerWindow(QMainWindow):
         self.generate_report_btn.setEnabled(False)
         output_layout.addWidget(self.generate_report_btn)
 
+        self.export_pdf_btn = QPushButton("📄 Export PDF Report")
+        self.export_pdf_btn.setStyleSheet("QPushButton { background-color: #1A3C6E; color: white; border: none; }")
+        self.export_pdf_btn.clicked.connect(self.export_pdf)
+        self.export_pdf_btn.setEnabled(False)
+        output_layout.addWidget(self.export_pdf_btn)
+
         self.ai_summary_btn = QPushButton("🤖 Generate AI Summary")
         self.ai_summary_btn.setStyleSheet("QPushButton { background-color: #00838F; color: white; border: none; }")
         self.ai_summary_btn.clicked.connect(self.generate_ai_summary)
@@ -426,6 +433,19 @@ class AnalyzerWindow(QMainWindow):
         """)
         self.timeline_layout.addWidget(self.timeline_table)
 
+        # Heatmap display below the table
+        heatmap_title = QLabel("🔥 Suspect Movement Heatmap")
+        heatmap_title.setStyleSheet("color: #FFFFFF; font-weight: bold; padding: 8px 0px 4px 0px;")
+        self.timeline_layout.addWidget(heatmap_title)
+
+        self.heatmap_label = QLabel("Run an analysis to generate the movement heatmap.")
+        self.heatmap_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.heatmap_label.setMinimumHeight(200)
+        self.heatmap_label.setStyleSheet(
+            "border: 1px dashed #555555; background-color: #1E1E1E; color: #888888;"
+        )
+        self.timeline_layout.addWidget(self.heatmap_label)
+
     def setup_history_tab(self):
         """Tab 3: Case History — all past cases from SQLite."""
         title = QLabel("🗂️ Investigation Case History")
@@ -533,6 +553,22 @@ class AnalyzerWindow(QMainWindow):
                 item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
                 self.history_table.setItem(i, j, item)
 
+    @Slot(np.ndarray)
+    def show_heatmap(self, heatmap_bgr):
+        """Displays the movement heatmap in the Suspect Timeline tab."""
+        h, w, ch       = heatmap_bgr.shape
+        heatmap_rgb    = cv2.cvtColor(heatmap_bgr, cv2.COLOR_BGR2RGB)
+        bytes_per_line = ch * w
+        q_img  = QImage(heatmap_rgb.data, w, h, bytes_per_line, QImage.Format.Format_RGB888)
+        pixmap = QPixmap.fromImage(q_img)
+        self.heatmap_label.setPixmap(pixmap.scaled(
+            self.heatmap_label.size(),
+            Qt.AspectRatioMode.KeepAspectRatio,
+            Qt.TransformationMode.SmoothTransformation
+        ))
+        # Auto-switch to Suspect Timeline tab to show heatmap
+        self.tab_widget.setCurrentIndex(1)
+
     def extract_and_display_metadata(self, video_path):
         cap = cv2.VideoCapture(video_path)
         if not cap.isOpened():
@@ -577,6 +613,7 @@ class AnalyzerWindow(QMainWindow):
         self.current_fps_metric.setText("Analysis Rate: 0.00 FPS")
         self.total_frames   = 0
         self.video_metadata = {}
+        self.export_pdf_btn.setEnabled(False)
         
         file_name, _ = QFileDialog.getOpenFileName(
             self, "Open Video File", "", "Video Files (*.mp4 *.mov *.avi)"
@@ -671,6 +708,7 @@ class AnalyzerWindow(QMainWindow):
         )
         self.video_worker.frame_signal.connect(self.update_frame)
         self.video_worker.finished_signal.connect(self.analysis_finished)
+        self.video_worker.heatmap_signal.connect(self.show_heatmap)
         self.video_worker.start()
 
     @Slot()
@@ -859,6 +897,7 @@ class AnalyzerWindow(QMainWindow):
         if self.total_evidence_frames > 0:
             self.generate_report_btn.setEnabled(True)
             self.ai_summary_btn.setEnabled(True)
+            self.export_pdf_btn.setEnabled(True)
         self.analyze_btn.setText("▶️ START")
         self.analyze_btn.setStyleSheet(f"QPushButton {{ background-color: {self.COLOR_START_ANALYSIS}; color: white; border: none; }}")
         
@@ -879,6 +918,35 @@ class AnalyzerWindow(QMainWindow):
             video_metadata=self.video_metadata,
             last_analysis_rate=self.last_analysis_rate
         )
+
+    @Slot()
+    def export_pdf(self):
+        """Generates a complete forensic PDF report."""
+        if not self.evidence_log:
+            QMessageBox.information(self, "No Evidence", "Run an analysis first.")
+            return
+
+        self.export_pdf_btn.setEnabled(False)
+        self.export_pdf_btn.setText("⏳ Generating PDF...")
+
+        try:
+            # Get AI summary from Tab 4 if available
+            ai_summary = self.ai_report_text.toPlainText() or None
+
+            output_path = generate_pdf_report(
+                evidence_log=self.evidence_log,
+                video_metadata=self.video_metadata,
+                case_id=self.current_case_id,
+                last_analysis_rate=self.last_analysis_rate,
+                ai_summary=ai_summary
+            )
+            QMessageBox.information(self, "PDF Exported",
+                                    f"Forensic PDF report saved to:\n{output_path}")
+        except Exception as e:
+            QMessageBox.critical(self, "PDF Error", str(e))
+        finally:
+            self.export_pdf_btn.setEnabled(True)
+            self.export_pdf_btn.setText("📄 Export PDF Report")
 
     @Slot()
     def generate_ai_summary(self):
